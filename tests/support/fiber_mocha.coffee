@@ -32,8 +32,21 @@ Runnable.prototype.run = (fn) ->
     if @sync
       @async = true
       @sync  = false
-      @fn = (done) -> Fiber(() => _fn.call(@); done()).run()
+      @fn = (done) -> 
+        Fiber(() => 
+          try
+            _fn.call(@)
+            done()
+          catch e
+            done e
+        ).run()
     else
-      @fn = (done) -> Fiber(() => _fn.call @, done).run()
+      @fn = (done) -> 
+        Fiber(() => 
+          try
+            _fn.call @, done
+          catch e
+            done e
+        ).run()
 
   _run.call @,fn

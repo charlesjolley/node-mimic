@@ -6,6 +6,10 @@ mimic = require 'mimic'
 uuid  = require('uuid').v4
 express = require 'express'
 
+########################################################
+## SUPPORT DB
+##
+
 # dummy async DB for demo purposes
 class SimpleDb
   constructor: -> @data = {}
@@ -30,37 +34,66 @@ class SimpleDb
     done null, ret
   , 50)
 
+
+########################################################
+## SERVICES
+##
+
 # User Service!    
 class UserService extends FiberService
   
+  ## API
+  USER_SCHEMA = ->
+    user:
+      type: 'object'
+      additionalProperties: no
+      properties:
+        email:
+          type: 'string'
+          format: 'email'
+          required: yes
+          
+        password:
+          type: 'string'
+          required: yes
+
+  # uses default schema (just expects an id)
+  @index   yes
+  @show    yes
+  @destroy yes
+  @create(properties: USER_SCHEMA)
+  @update(properties: USER_SCHEMA)
+
+  ## HANLDERS
+    
   # simple in memory DB for fun...
   constructor: ->
     super
     db = new SimpleDb()
 
-  @index (res, opts) ->
+  onIndex: (res, opts) ->
     res.send @future(@db.list("user", @resume)).wait()
       
   # gets a user instance from the DB
-  @show (res, opts) ->
+  onShow: (res, opts) ->
     user = @future(@db.get("user:#{opts.id}", @resume)).wait()
     if user then res.send(data: user)
     else res.send(mimic.NOT_FOUND) # HTTP codes
   
   # creates a new user instance
-  @create (res, opts) ->
+  onCreate: (res, opts) ->
     user = opts.body
     user.id = uuid()
     @future(@db.set("user:#{user.id}", user, @resume)).wait()
     res.send(data: user)
   
   # deletes a user instance
-  @del (res, opts) ->
+  onDestroy: (res, opts) ->
     @db.del "user:#{opts.id}" # don't wait
     res.send(200)
     
   # update user
-  @update (res, opts) ->
+  onUpdate: (res, opts) ->
     userId = "user:#{opts.id}"
     user = @future(@db.get(userId, @resume)).wait()
     ['username', 'gender', 'age'].forEach (key) ->
@@ -73,26 +106,60 @@ class UserService extends FiberService
 # notifies any listeners on the service.
 class CoreChatService extends FiberService
   
+  ## API
+  @post 'subscriptions/:serviceId',
+    description: 'Adds a subscription to a chat service'
+    additionalProperties: no
+    properties:
+      serviceId:
+        type: 'string'
+        required: yes
+        
+      path:
+        type: 'string'
+        required: no
+
+  @del 'subscriptions/:serviceId',
+    description: 'Removes a subscription from a chat service'
+    additionalProperties: no
+    properties:
+      serviceId:
+        type: 'string'
+        required: yes
+        
+  @post 'messages',
+    description: 'Posts a new message to the chat room'
+    additionalProperties: no
+    properties:
+      senderId:
+        type: 'string'
+        required: yes
+      message:
+        type: 'string'
+        required: yes
+        
+  ## HANDLERS
+          
   constructor: ->
     super
     @db = new SimpleDb()
     
   # called by other services to start listening for
   # notifications.
-  @post "subscriptions", (res, opts) ->
+  onPostSubscriptions: (res, opts) ->
     serviceId = opts.serviceId
-    path      = opts.path
+    path      = opts.path or '/'
     @db.set("subscriptions:#{serviceId}", serviceId: serviceId, path: path)
     res.send 200 #OK!
     
-  @del "subscriptions", (res, opts) ->
+  onDeleteSubscriptions: (res, opts) ->
     @db.del("subscriptions:#{serviceId}")
     res.send 200 #OK!
 
   # send a message. takes a userId and a message. We verify
   # the user still exists, expand the name and then send to
   # all listeners.
-  @post "messages", (res, opts) ->
+  onPostMessages: (res, opts) ->
     message = opts.body
     userId  = message.userId
     message.id = uuid()
@@ -114,6 +181,25 @@ class CoreChatService extends FiberService
 # connection.
 class EdgeChatService extends FiberService
   
+  # API
+  @post 'notify',
+    description: 'Receives notifications from CoreChatService'
+    additionalProperties: no
+    properties:
+      user:
+        type: 'object'
+        required: yes
+        additionalProperties:  yes
+        properties:
+          id:    { type: 'string', required: yes }
+          email: { type: 'string', required: yes, format: 'email' }
+      message:
+        type: 'string'
+        required: yes 
+  
+  
+  # HANDLERS AND METHODS
+  
   # this is the interface exposed to our connect service
   start: (fn) ->
     @fn
@@ -124,11 +210,15 @@ class EdgeChatService extends FiberService
     req = @request('core_chat').del('subscriptions', serviceId: @id)
     
   # called from the CoreChatService
-  @post 'notify', (res, opts) ->
+  onPostNotify: (res, opts) ->
     @fn opts.body # just notify our listener
     res.send 200
     
     
+########################################################
+## MAIN APP
+##
+
 # Setup Mimic for core services
 TIER = '*', # or 'core' or 'edge' or array - depending on server
 intern = mimic
@@ -176,15 +266,18 @@ app.get 'messages', (req, res) ->
 # listen on public port
 
 
+########################################################
+## TESTING EXAMPLE
+##
+
 ## Testing Core Chat Service
 # This prevents you having to run the UserService DB.
-class MockUserService extends Service
-  
-  @index  (res) -> res.send(body: [{ id: '1', username: 'okito' }])
-  @create (res) -> res.send 201, id: '1'
-  @show   (res, opts) -> res.send(body: { id: '1', username: 'okito' })
-  @update (res, opts) -> res.send 200 # fake it
-  @del (res, opts) -> res.send 200
+class MockUserService extends UserService
+  onIndex:   (res) -> res.send(body: [{ id: '1', username: 'okito' }])
+  onCreate:  (res) -> res.send 201, id: '1'
+  onShow:    (res, opts) -> res.send(body: { id: '1', username: 'okito' })
+  onUpdate:  (res, opts) -> res.send 200 # fake it
+  onDestroy: (res, opts) -> res.send 200
 
 
 

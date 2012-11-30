@@ -1,14 +1,47 @@
 
+########################################################
+## DUMMY SERVICE
+##
+
 class MyService extends mimic.Service
 
-  @get 'greeting', (res, opts) -> 
-    res.send(body: "Hello #{opts.name || 'World'}")
+  ## API
+  @get 'greeting',
+    description: 'Returns a greeting with an optional name'
+    additionalProperties: no
+    properties:
+      name: { type: 'string', required: no }
+      number: { type: 'number', required: no }
+      
+  @get 'fr-greeting',
+    description: 'Returns a greeting in french'
+    additionalProperties: no
+    properties:
+      name: { type: 'string', required: no }
+      
+  @del 'greeting',
+    description: 'Returns a goodbye with optional name'
+    additionalProperties: no
+    properties:
+      name: { type: 'string', required: no }
+       
+  ## HANDLERS 
+  onGetGreeting: (res, opts) -> 
+    res.send(body: "Hello #{opts.name || (opts.number + 23) || 'World'}")
 
-  @get 'fr-greeting', (res, opts) ->
+  onGetFrGreeting: (res, opts) ->
     res.send(body: "Bonjour #{opts.name || 'Le Monde'}")
     
-  @['delete'] 'greeting', (res, opts) -> 
+  onDeleteGreeting: (res, opts) -> 
     res.send(body: "Goodbye #{opts.name || 'World'}")
+    
+  # Added to try to trip up inheritence.
+  onNamedGreeting: ->
+
+
+########################################################
+## TESTS
+##
 
 describe "instantiation", ->
 
@@ -23,7 +56,7 @@ describe "instantiation", ->
     service.href.should.eql 'mimic:service.default'
       
   it 'should throw exception if no mimic', ->
-    should.Throw -> new MyService(id: 'service', tier: 'default')
+    expect(-> new MyService(id: 'service', tier: 'default')).to.throw Error
     
   it 'should generate an ID and have default tier if none provided', ->
     service = new MyService(app: mimic)
@@ -40,8 +73,14 @@ describe "instantiation", ->
 describe 'Service.route', ->
 
   class ChildService extends MyService
-    @get 'greeting', (res, opts) -> # new fn
-    @get 'fr-greeting/:name', (res, opts) ->
+    
+    @get 'fr-greeting/:name', method: 'onNamedGreeting',
+      additionalProperties: no
+      properties:
+        name: { type: 'string', required: yes }
+
+    onGreeting:      (res, opts) -> # new fn
+    onNamedGreeting: (res, opts) ->
 
   beforeEach ->
     @service = new MyService(app: mimic, id: 'service', tier: 'default')
@@ -52,36 +91,41 @@ describe 'Service.route', ->
               '/Greeting/', '/GREETING/./', 'NOT/../greeting']
     
     paths.forEach (path) =>
-      expect(@service.route('get', path), "get #{path}").not.to.be.null
-    expect(@service.route('delete', 'greeting'), "del greeting").not.to.be.null
-    fn1 = @service.route('get', 'greeting')[0]
-    fn2 = @service.route('delete', 'greeting')[0]
-    expect(fn1, 'get vs del handlers').to.not.equal fn2
+      route = @service.route('get', path)
+      expect(route, "get #{path}").not.to.be.null
+      expect(route.fn, 'get fn').to.equal 'onGetGreeting'
+
+      route = @service.route('delete', path)
+      expect(route, "delete #{path}").not.to.be.null
+      expect(route.fn, 'delete fn').to.eql 'onDeleteGreeting'
+      
+  it 'should map to non-default route names', ->
+    route = @child.route('get', 'fr-greeting/:name')
+    expect(route).not.to.be.null
+    expect(route.fn, 'child fn').to.eql 'onNamedGreeting'
     
-  it 'should add method and path to opts', ->
-    opts = @service.route('GET', '/greeting')[1]
-    expect(opts).to.have.keys 'method', 'path'
-    opts.method.should.eql 'get'
-    opts.path.should.eql '/greeting'
-    
-  it 'should handle inheritance', ->
-    serviceFn = @service.route 'get', 'greeting'
-    childFn   = @child.route   'get', 'greeting'
-    expect(childFn, 'child.greeting v parent.greeting').not.to.eql serviceFn
-    
-    serviceFn = @service.route 'get', 'fr-greeting/:name'
-    childFn   = @child.route   'get', 'fr-greeting/:name'
-    expect(serviceFn, 'child route in parent').to.be.null
-    expect(childFn, 'child route in child').not.to.be.null
+  it 'should handle inheritance overrides', ->
+    expect(@service.route('get', 'greeting').fn, 'service.get')
+      .to.equal 'onGetGreeting'
+      
+    expect(@child.route('get', 'greeting').fn, 'child.get')
+      .to.equal 'onGetGreeting'
+
+
+  it 'should add new handler on child and not to parent', ->
+    expect(@service.route('get', 'fr-greeting/:name'), 'parent').to.be.null
     
   it 'should handle wildcards', ->
-    plainFn = @child.route 'get', 'fr-greeting'
-    wildFn  = @child.route 'get', 'fr-greeting/charles'
+    plainRoute = @child.route 'get', 'fr-greeting'
+    wildRoute  = @child.route 'get', 'fr-greeting/charles'
     
-    expect(plainFn, 'child.fr-greeting').not.to.be.null
-    expect(wildFn, 'child.fr-greeing/charles').not.to.be.null
-    expect(wildFn[0], 'handler functions').not.to.equal plainFn[0]
-    wildFn[1].should.have.property 'name', 'charles'
+    expect(plainRoute, 'no wildcard').not.to.be.null
+    expect(plainRoute.fn, 'no wildcard fn').to.equal 'onGetFrGreeting'
+    
+    expect(wildRoute, 'wildcard').not.to.be.null
+    expect(wildRoute.fn, 'wildcard fn').to.equal 'onNamedGreeting'
+    expect(wildRoute.params, 'wildcard params')
+      .to.have.property 'name', 'charles'
 
 describe 'Service.call()', ->
   
@@ -101,7 +145,6 @@ describe 'Service.call()', ->
     expect(@service.call 'get', 'GReeTING').to.be.instanceof mimic.Response
     expect(@service.call 'GET', 'greeting').to.be.instanceof mimic.Response
     
-
   it 'should invoke correct handler based on method and path', ->
     @service.call('get', 'greeting').wait().should.eql
       body: 'Hello World', status: 200
@@ -120,78 +163,126 @@ describe 'Service.call()', ->
     @service.call('delete', 'greeting', name: 'Charles').wait().should.eql
       body: 'Goodbye Charles', status: 200
 
+  it 'should throw error if request does not match schema', ->
+    expect(=>
+      @service.call('get', 'greeting', count: 123).wait()
+    ).to.throw(/Additional properties/)
+      
+  it 'should use schema to massage data', ->
+    res = @service.call('get', 'greeting', number: 12).wait()
+    expect(res.body).to.equal 'Hello 35'
+  
 describe 'Service HTTP Method Helpers', ->
   
   class FullService extends mimic.Service
     
-    @get (res) -> res.send(body: 'get')
-    @put (res) -> res.send(body: 'put')
-    @['delete'] (res) -> res.send(body: 'delete')
-    @post (res) -> res.send(body: 'post')
-    @head (res) -> res.send(body: 'head')
+    # API
+    @get true
+    @put true
+    @del true
+    @post true
+    @head true
+    
+    onGet: (res) -> res.send(body: 'get')
+    onPut: (res) -> res.send(body: 'put')
+    onDelete: (res) -> res.send(body: 'delete')
+    onPost: (res) -> res.send(body: 'post')
+    onHead: (res) -> res.send(body: 'head')
 
+  class NotQuiteFullService extends FullService
+    @get false
+    
   it 'should handle routes for each type of method', ->
     @service = new FullService(app: mimic)
     ['get', 'put', 'delete', 'post', 'head'].forEach (method) =>
       expect(@service.call(method).wait()?.body, method)
         .to.equal method
 
+  it 'should remove routes when declaring false', ->
+    @service = new NotQuiteFullService(app: mimic)
+    expect(@service.call('get')).to.be.null
+    
   describe 'Basic REST Helpers', ->
   
     class RestService extends mimic.Service
       
-      @index  (res, opts) -> res.send(opts)
-      @show   (res, opts) -> res.send(opts)
-      @update (res, opts) -> res.send(opts)
-      @create (res, opts) -> res.send(opts)
-      @del    (res, opts) -> res.send(opts)
+      @index   true
+      @show    true
+      @update  true
+      @create  true
+      @destroy true
+      
+      onIndex:   (res, opts) -> res.send(action: 'index',   id: opts.id)
+      onShow:    (res, opts) -> res.send(action: 'show',    id: opts.id)
+      onUpdate:  (res, opts) -> res.send(action: 'update',  id: opts.id)
+      onCreate:  (res, opts) -> res.send(action: 'create',  id: opts.id)
+      onDestroy: (res, opts) -> res.send(action: 'destroy', id: opts.id)
     
     handlers =
-      index:  { method: 'get',  path: '/' }
-      show:   { method: 'get',  path: '/1', id: '1' }
-      update: { method: 'put',  path: '/1', id: '1' }
-      create: { method: 'post', path: '/' }
-      del:    { method: 'delete', path: '/1', id: '1' }
+      index:  { method: 'get', path: '/',  id: undefined }
+      show:   { method: 'get', path: '/1', id: '1' }
+      update: { method: 'put', path: '/1', id: '1' }
+      create: { method: 'post', path: '/', id: undefined }
+      destroy:{ method: 'delete', path: '/1', id: '1' }
 
     beforeEach ->
       @service = new RestService(app: mimic)
       
-    for actionName, desc of handlers
-     it "should implement #{actionName}", ->
-      desc.status = 200
-      desc.foo = 'bar'
-      res = @service.call(desc.method, desc.path, { foo: 'bar' })
-      expect(res.wait()).to.eql desc
+    for _actionName, _desc of handlers
+      ((actionName, desc) ->
+       it "should implement #{actionName}", ->
+         desc.action = actionName
+         method = desc.method
+         path   = desc.path
+         desc.status = 200
+         delete desc.method
+         delete desc.path
+         
+         res = @service.call(method, path, { foo: 'bar' })
+         expect(res).to.not.be.null
+         expect(res.wait()).to.eql desc
+      )(_actionName, _desc) # save context in closure
    
 
   describe 'Deep REST Helpers', ->
   
     class RestService extends mimic.Service
       
-      @index  'users', (res, opts) -> res.send(opts)
-      @show   'users', (res, opts) -> res.send(opts)
-      @update 'users', (res, opts) -> res.send(opts)
-      @create 'users', (res, opts) -> res.send(opts)
-      @del    'users', (res, opts) -> res.send(opts)
+      @index   'users'
+      @show    'users'
+      @update  'users'
+      @create  'users'
+      @destroy 'users'
+
+      onIndexUsers:   (res, opts) -> res.send(action: 'index',   id: opts.id)
+      onShowUsers:    (res, opts) -> res.send(action: 'show',    id: opts.id)
+      onUpdateUsers:  (res, opts) -> res.send(action: 'update',  id: opts.id)
+      onCreateUsers:  (res, opts) -> res.send(action: 'create',  id: opts.id)
+      onDestroyUsers: (res, opts) -> res.send(action: 'destroy', id: opts.id)
     
     handlers =
-      index:  { method: 'get',  path: '/users' }
-      show:   { method: 'get',  path: '/users/1', id: '1' }
-      update: { method: 'put',  path: '/users/1', id: '1' }
-      create: { method: 'post', path: '/users' }
-      del:    { method: 'delete', path: '/users/1', id: '1' }
+      index:   { method: 'get',    path: '/users',   id: undefined}
+      show:    { method: 'get',    path: '/users/1', id: '1' }
+      update:  { method: 'put',    path: '/users/1', id: '1' }
+      create:  { method: 'post',   path: '/users',   id: undefined }
+      destroy: { method: 'delete', path: '/users/1', id: '1' }
   
     beforeEach ->
       @service = new RestService(app: mimic)
       
-    for actionName, desc of handlers
-     it "should implement #{actionName}", ->
-      desc.status = 200
-      desc.foo = 'bar'
-      res = @service.call(desc.method, desc.path, { foo: 'bar' })
-      expect(res.wait()).to.eql desc
+    for _actionName, _desc of handlers
+     ((actionName, desc) ->
+       it "should implement #{actionName}", ->
+         desc.status = 200
+         desc.action = actionName
+         method = desc.method
+         path   = desc.path
+         delete desc.method
+         delete desc.path
+         res = @service.call(method, path, { foo: 'bar' })
+         expect(res.wait()).to.eql desc
+     )(_actionName, _desc)
    
-
 describe 'JavaScript.extend', ->
 
   ClassA = MyService.extend ->
@@ -221,7 +312,7 @@ describe 'JavaScript.extend', ->
       .to.equal ClassA
     
   it 'should init classA', ->
-    should.Throw -> new ClassA()
+    expect(-> new ClassA()).to.throw Error
     a = new ClassA(app: mimic)
     a.should.have.property 'didInitClassA', true
     a.should.not.have.property 'didInitClassB'

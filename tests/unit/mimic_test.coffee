@@ -1,15 +1,24 @@
 # Service Helpers are extra functions added beyond the core calling 
 # mechanisms.
 
-
 # Simple echo service identifies itself
 METHODS = ['get', 'put', 'post', 'delete'] 
 class EchoService extends mimic.Service
-  METHODS.forEach (method) =>
-    @[method] (res, opts) -> 
-      opts.serviceId = @id; 
-      opts.serviceTier = @tier
-      res.send(opts)
+  
+  @get true
+  @put true
+  @post true
+  @del  true
+  
+  FN = (res, opts) -> 
+    opts.serviceId = @id; 
+    opts.serviceTier = @tier
+    res.send(opts)
+
+  onGet: FN
+  onPut: FN
+  onPost: FN
+  onDelete: FN
   
 describe 'config method', ->
   beforeEach -> @intern = mimic()
@@ -73,8 +82,6 @@ describe 'request', ->
         serviceId:   'echo1'
         serviceTier: 'default'
         pass:        'through'
-        method:      method
-        path:        '/'
 
       req = @intern.request('echo2')
       expect(req[method]().wait().serviceId, 'echo2').to.equal 'echo2'        

@@ -15,12 +15,16 @@
     "coffee-script": "*",
     "connect": "*",
     "houkou": "*",
-    "node-uuid": "*"
+    "node-uuid": "*",
+    "contracts": "*",
+    "lingo": "*"
   },
   
   "devDependencies": {
     "mocha": "*",
     "chai":  "*",
-    "sinon": "*"
+    "sinon": "*",
+    "coffeedoc": "*",
+    "supervisor": "*"
   }
 }
