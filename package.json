@@ -1,0 +1,26 @@
+{
+  "name": "mimic",
+  "version": "0.0.1",
+  "description": "Simple framework for writing internal web services",
+  "author": "Charles Jolley",
+  
+  "main": "index.js",
+  
+  "scripts": {
+    "test": "make test"
+  },
+  
+  "dependencies": {
+    "fibers": "*",
+    "coffee-script": "*",
+    "connect": "*",
+    "houkou": "*",
+    "node-uuid": "*"
+  },
+  
+  "devDependencies": {
+    "mocha": "*",
+    "chai":  "*",
+    "sinon": "*"
+  }
+}
