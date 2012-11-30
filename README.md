@@ -80,6 +80,9 @@ Or as CoffeeScript:
             
 # Splitting Your App By Tiers
 
+> **NOTE**: Remote service support is not yet implemented. This section 
+> describes how I intend the feature to work in the future.
+   
 So far, so good. But why is this useful? Well, for one thing, it's easy to 
 split mimic services into tiers once you start to scale. Just tier locations when you create your instance and then register your services with tier names:
 
