@@ -83,7 +83,6 @@ describe 'Service.route', ->
     expect(wildFn[0], 'handler functions').not.to.equal plainFn[0]
     wildFn[1].should.have.property 'name', 'charles'
 
-
 describe 'Service.call()', ->
   
   beforeEach ->
@@ -192,6 +191,52 @@ describe 'Service HTTP Method Helpers', ->
       res = @service.call(desc.method, desc.path, { foo: 'bar' })
       expect(res.wait()).to.eql desc
    
+
+describe 'JavaScript.extend', ->
+
+  ClassA = MyService.extend ->
+    @isOnClass = true
+    @::instanceFn = -> 'ClassA'
+    expect(@get).to.be.a 'function'
+    
+    @::init = (args...) ->
+      @didInitClassA = true
+      ClassA.__super__.constructor.apply(@,args)
+    null
+    
+  ClassB = ClassA.extend ->
+    @::instanceFn = -> "ClassB - #{ClassB.__super__.instanceFn.call(@)}"
+    @::init = (args...) ->
+      @didInitClassB = true
+      ClassB.__super__.constructor.apply(@,args)
+    null
+
+  it 'should have basic properties hooked up', ->
+    expect(ClassA.__super__, 'ClassA.__super__').to.equal MyService.prototype
+    expect(ClassA.__super__.constructor, 'ClassA.constructor')
+      .to.equal MyService
+    
+    expect(ClassB.__super__, 'ClassB.__super__').to.equal ClassA.prototype
+    expect(ClassB.__super__.constructor, 'ClassB.constructor')
+      .to.equal ClassA
+    
+  it 'should init classA', ->
+    should.Throw -> new ClassA()
+    a = new ClassA(app: mimic)
+    a.should.have.property 'didInitClassA', true
+    a.should.not.have.property 'didInitClassB'
+    ClassA.should.have.property 'isOnClass', true
+    a.instanceFn().should.eql 'ClassA'
+
+  it 'should init classB', ->
+    should.Throw -> new ClassB()
+    b = new ClassB(app: mimic)
+    b.should.be.instanceof ClassB
+    b.should.have.property 'didInitClassA', true
+    b.should.have.property 'didInitClassB', true
+    ClassB.should.have.property 'isOnClass', true
+    b.instanceFn().should.eql 'ClassB - ClassA'
+
 
 describe 'exposed helpers', ->
   

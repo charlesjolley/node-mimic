@@ -83,6 +83,31 @@ class Service
     routes
 
 
+  # Duplicate CoffeeScript extend & super. Allows you to use this with
+  # JavaScript as well.
+  _hasProp = {}.hasOwnProperty
+  _extends = (child, parent) ->
+    for key,val of parent
+      child[key]=val if _hasProp.call(parent,key)
+    ctor = -> @constructor = child; @
+    ctor.prototype = parent.prototype
+    child.prototype = new ctor()
+    child.__super__ = parent.prototype
+    child
+
+  @extend = (fns...) ->
+    Child = (args...) -> Child::init(args...) if Child::init; @
+
+    _extends Child, @
+    Child::init = (args...) -> Child.__super__.constructor.apply(@, args)
+
+    fns.forEach (fn) ->
+      if 'function' == typeof fn then fn = fn.call(Child)
+      if 'object' == typeof fn then Child.prototype[k]=v for k,v of fn
+
+    Child
+
+  
   ## DSL
   ['get', 'delete', 'post', 'put', 'head'].forEach (method) =>
     @[method] = (routeName, fn) ->
